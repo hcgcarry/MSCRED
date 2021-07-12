@@ -8,7 +8,7 @@ Construct s (s = 3) signature matrices with different lengths(w = 10, 30, 60)
 
 import numpy as np
 import pandas as pd
-import cnn_lstm.utils as util
+import utils as util
 import os
 
 
@@ -41,8 +41,9 @@ class SignatureMatrices:
         raw_data = np.asarray(self.raw_data)
         signature_matrices = np.zeros((self.signature_matrices_number, self.series_number, self.series_number))
 
-        for t in range(win, self.signature_matrices_number):
-            raw_data_t = raw_data[:, t - win:t]
+        for t in range(self.signature_matrices_number):
+            adj_t = t * util.gap_time + win
+            raw_data_t = raw_data[:, adj_t - win:adj_t]
             signature_matrices[t] = np.dot(raw_data_t, raw_data_t.T) / win
 
         return signature_matrices

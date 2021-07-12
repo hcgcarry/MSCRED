@@ -1,5 +1,5 @@
 import tensorflow as tf
-import cnn_lstm.utils as util
+import utils as util
 import numpy as np
 import os
 
@@ -30,7 +30,7 @@ def tensor_variable(shape, name):
     :return:
     """
     variable = tf.Variable(tf.zeros(shape), name=name)
-    variable = tf.compat.v1.get_variable(name, shape=shape, initializer=tf.contrib.layers.xavier_initializer())
+    variable = tf.get_variable(name, shape=shape, initializer=tf.contrib.layers.xavier_initializer())
     return variable
 
 
@@ -41,6 +41,7 @@ def cnn_encoder(data):
     :return:
     """
     # the first layer,the output size is 30 * 30 * 32
+    # filter shape:kl,kl,d(l-1) ,d(l)
     filter1 = tensor_variable([3, 3, 3, 32], "filter1")
     strides1 = (1, 1, 1, 1)
     cnn1_out = cnn_encoder_layer(data, filter1, strides1)
@@ -66,6 +67,8 @@ def cnn_encoder(data):
 def cnn_lstm_attention_layer(input_data, layer_number):
     """
 
+    attention_w 可以想成，每個step 的weight,這個weight是這一個step的output跟最後一個output做inner product
+    想法:一味最後一個output跟現在的關係最大，所以inner product月大的 給他越高的權重
     :param input_data:
     :param layer_number:
     :return:
@@ -82,12 +85,16 @@ def cnn_lstm_attention_layer(input_data, layer_number):
         name="conv_lstm_cell" + str(layer_number))
 
     outputs, state = tf.nn.dynamic_rnn(convlstm_layer, input_data, dtype=input_data.dtype)
+    print("outputs shape",outputs.shape)
 
     # attention based on inner-product between feature representation of last step and other steps
     attention_w = []
     for k in range(util.step_max):
         attention_w.append(tf.reduce_sum(tf.multiply(outputs[0][k], outputs[0][-1])) / util.step_max)
+    print("attention_w len",len(attention_w))
+    print("attention_w ",attention_w)
     attention_w = tf.reshape(tf.nn.softmax(tf.stack(attention_w)), [1, util.step_max])
+    print("attention_w ",attention_w)
 
     outputs = tf.reshape(outputs[0], [util.step_max, -1])
     outputs = tf.matmul(attention_w, outputs)
@@ -141,15 +148,17 @@ def main():
     matrix_gt_1 = np.load(matrix_data_path)
 
     sess = tf.Session()
-    data_input = tf.compat.v1.placeholder(tf.float32, [util.step_max, 30, 30, 3])
+    data_input = tf.placeholder(tf.float32, [util.step_max, 30, 30, 3])
 
     # cnn encoder
+    print("data_input shape",data_input.shape)
     conv1_out, conv2_out, conv3_out, conv4_out = cnn_encoder(data_input)
 
     conv1_out = tf.reshape(conv1_out, [-1, 5, 30, 30, 32])
     conv2_out = tf.reshape(conv2_out, [-1, 5, 15, 15, 64])
     conv3_out = tf.reshape(conv3_out, [-1, 5, 8, 8, 128])
     conv4_out = tf.reshape(conv4_out, [-1, 5, 4, 4, 256])
+    print("conv1_out shape",conv1_out.shape)
 
     # lstm with attention
     conv1_lstm_attention_out, atten_weight_1 = cnn_lstm_attention_layer(conv1_out, 1)
@@ -162,7 +171,7 @@ def main():
                              conv4_lstm_attention_out)
     # loss function: reconstruction error of last step matrix
     loss = tf.reduce_mean(tf.square(data_input[-1] - deconv_out))
-    optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=util.learning_rate).minimize(loss)
+    optimizer = tf.train.AdamOptimizer(learning_rate=util.learning_rate).minimize(loss)
 
     # variable initialization
     init = tf.global_variables_initializer()
